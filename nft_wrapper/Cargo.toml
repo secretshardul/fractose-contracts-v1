@@ -1,5 +1,5 @@
 [package]
-name = "nft-wrapper"
+name = "nft_wrapper"
 version = "0.1.0"
 authors = ["shardul <shardul.aeer@somaiya.edu>"]
 edition = "2018"
