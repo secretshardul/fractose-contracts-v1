@@ -1,35 +1,40 @@
-use near_sdk::{borsh::{self, BorshDeserialize, BorshSerialize}, collections::LookupSet};
-use near_sdk::{wee_alloc, env, near_bindgen, Promise, log, BorshStorageKey};
-use near_sdk::collections::LookupMap;
+use near_sdk::{
+    borsh::{self, BorshDeserialize, BorshSerialize},
+    collections::{LookupSet, LookupMap},
+    env, near_bindgen, Promise, log, BorshStorageKey
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+};
+
+near_sdk::setup_alloc!();
 
 #[derive(BorshSerialize, BorshStorageKey)]
-enum StorageKey {
+enum StorageKeyEnum {
     Wraps,
-    Wrappers
+    Wrappers,
 }
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Fractose {
-    // Mapping of NFT addresses to wrapper addresses
-    // pub wraps: LookupMap<String, bool>,
-    wraps: LookupSet<String>,
-    pub wrappers: LookupMap<String, String>
+    pub wraps: LookupSet<String>, // Set of wrapper addresses
+    pub wrappers: LookupMap<String, String> // Mapping of NFT addresses to wrapper addresses
+}
+
+impl Default for Fractose {
+    fn default() -> Self {
+        Self {
+            wraps: LookupSet::<String>::new(StorageKeyEnum::Wraps),
+            wrappers: LookupMap::<String, String>::new(StorageKeyEnum::Wrappers),
+        }
+    }
 }
 
 #[near_bindgen]
 impl Fractose {
-    #[init]
-    pub fn new() -> Self {
-        Self {
-            wraps: LookupSet::new(StorageKey::Wraps),
-            wrappers: LookupMap::new(StorageKey::Wrappers),
-        }
-    }
 
+    pub fn hello_world(&self) {
+        log!("Hello world");
+    }
 
     /// Ensure that NFT contract is wrapped. Return the wrapper contract name
     ///
@@ -51,15 +56,12 @@ impl Fractose {
                 wrapper
             },
             None => {
-                // let prefix = _target.replace(".", "-");
-                // let wrapper = format!("{}.{}", prefix, env::current_account_id());
                 let wrapper = get_wrapper_name(_target.clone());
                 log!("Deploying wrapper contract {}", wrapper);
 
                 // Deploy wrapper contract
                 Promise::new(wrapper.clone())
                     .create_account()
-                    // .transfer(1850000000000000000000)
                     .transfer(1500000000000000000000000)
                     .add_full_access_key(env::signer_account_pk())
                     .deploy_contract(
@@ -78,20 +80,43 @@ impl Fractose {
     ///
     /// # Parameters
     ///
-    /// - `_target`: Address of NFT contract
+    /// - `target`: Address of NFT contract
     /// - `token_id`: Address of the NFT to be securitized
-    pub fn securitize(&mut self, _target: String, token_id: String) {
-        log!("Securitizing token {} from contract {}", token_id, _target);
+    /// - `shares_count`: Number of fungible shares to be created
+    /// - `decimals`: Number of decimal places in share fungible tokens
+    /// - `exit_price`: Underlying NFT can be retrieved by paying the exit price
+    /// - `payment_token`: Address of the token which can be used to pay exit price
+    /// - `remnant`: For creating modules
+    pub fn securitize(
+        &mut self,
+        target: String,
+        token_id: String,
+        shares_count: u128,
+        decimals: u8,
+        exit_price: u128,
+        payment_token: String,
+        remnant: bool
+        ) {
+        log!("Securitizing token {} from contract {}", token_id, target);
 
-        // self.ensure_wrapper( _target);
-        let wrapper = self.ensure_wrapper( _target);
+        let wrapper = self.ensure_wrapper( target);
         log!("Got wrapper {}", wrapper);
+
+        // Check whether parameters are valid
+        assert!(exit_price > 0, "invalid exit price");
+        assert!(shares_count > 0, "invalid shares count");
+        assert!(exit_price % shares_count == 0, "share price cannot be fractional");
+
+        let share_price = exit_price / shares_count;
+        log!("Share price: {}", share_price);
+
+        // Deploy shares contract
+
+        // Transfer NFT from user to the shares contract
+
+        // Insert into wrapper
     }
 
-
-    pub fn hello_world(&self) {
-        log!("Hello world");
-    }
 }
 
 fn get_wrapper_name(_target: String) -> String {
@@ -140,11 +165,19 @@ mod tests {
 
         // Operate on contract data
         let mut contract = Fractose {
-            wraps: LookupSet::new(StorageKey::Wraps),
-            wrappers: LookupMap::new(StorageKey::Wrappers),
+            wraps: LookupSet::new(StorageKeyEnum::Wraps),
+            wrappers: LookupMap::new(StorageKeyEnum::Wrappers),
         };
 
-        contract.securitize(target_nft_contract.clone(), "0".to_string());
+        contract.securitize(
+            target_nft_contract.clone(),
+            "0".to_string(),
+            1000,
+            18,
+            10u128.pow(30),
+            "".to_string(),
+            false
+        );
 
         assert!(
             contract.wrappers.contains_key(&target_nft_contract),
