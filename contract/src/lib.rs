@@ -1,30 +1,53 @@
+use std::convert::TryInto;
+
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupSet, LookupMap},
-    env, near_bindgen, Promise, log, BorshStorageKey
-
+    collections::LookupMap,
+    ext_contract,
+    env, near_bindgen, Promise, log, BorshStorageKey, AccountId,
+    json_types::{ValidAccountId, U128},
 };
 
 near_sdk::setup_alloc!();
 
+pub type TokenId = u64;
+pub type AccountAndTokenId = String;
+
+#[ext_contract]
+pub trait Shares {
+    fn create(&mut self,
+        nft_contract_address: AccountId,
+        nft_token_id: TokenId,
+        owner_id: ValidAccountId,
+        shares_count: U128,
+        decimals: u8,
+        share_price: U128
+    ) -> Self;
+}
+
+#[ext_contract]
+pub trait NEP4 {
+    fn transfer(&mut self, new_owner_id: AccountId, token_id: TokenId);
+}
+
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKeyEnum {
-    Wraps,
-    Wrappers,
+    NftToSharesAddress,
+    SharesToNftAddress,
 }
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Fractose {
-    pub wraps: LookupSet<String>, // Set of wrapper addresses
-    pub wrappers: LookupMap<String, String> // Mapping of NFT addresses to wrapper addresses
+    pub nft_to_shares_address: LookupMap<AccountAndTokenId, AccountId>,
+    pub shares_to_nft_address: LookupMap<AccountId, AccountAndTokenId>
 }
 
 impl Default for Fractose {
     fn default() -> Self {
         Self {
-            wraps: LookupSet::<String>::new(StorageKeyEnum::Wraps),
-            wrappers: LookupMap::<String, String>::new(StorageKeyEnum::Wrappers),
+            nft_to_shares_address: LookupMap::<AccountAndTokenId, AccountId>::new(StorageKeyEnum::NftToSharesAddress),
+            shares_to_nft_address: LookupMap::<AccountId, AccountAndTokenId>::new(StorageKeyEnum::SharesToNftAddress),
         }
     }
 }
@@ -32,96 +55,77 @@ impl Default for Fractose {
 #[near_bindgen]
 impl Fractose {
 
-    pub fn hello_world(&self) {
-        log!("Hello world");
-    }
-
-    /// Ensure that NFT contract is wrapped. Return the wrapper contract name
-    ///
-    /// # Parameters
-    ///
-    /// - `_target`: Address of NFT contract to be wrapped
-    fn ensure_wrapper(&mut self, _target: String) -> String {
-
-        // Ensure that this is not a wrapper
-        let is_wrapper_contract = self.wraps.contains(&_target);
-        log!("This is a wrapper contract: {}", is_wrapper_contract);
-
-        assert!(!is_wrapper_contract, "cannot wrap a wrapper");
-
-        // If contract was not wrapped, create a wrapper
-        match self.wrappers.get(&_target) {
-            Some(wrapper) => {
-                log!("Got wrapper contract {:?}", wrapper.clone());
-                wrapper
-            },
-            None => {
-                let wrapper = get_wrapper_name(_target.clone());
-                log!("Deploying wrapper contract {}", wrapper);
-
-                // Deploy wrapper contract
-                Promise::new(wrapper.clone())
-                    .create_account()
-                    .transfer(1500000000000000000000000)
-                    .add_full_access_key(env::signer_account_pk())
-                    .deploy_contract(
-                        include_bytes!("../../nft_wrapper/res/nft_wrapper.wasm").to_vec(),
-                    );
-
-                self.wrappers.insert(&_target, &wrapper);
-                self.wraps.insert(&wrapper);
-
-                wrapper
-            }
-        }
-    }
-
     /// Securitize an approved NFT into shares
     ///
     /// # Parameters
     ///
-    /// - `target`: Address of NFT contract
-    /// - `token_id`: Address of the NFT to be securitized
+    /// - `nft_contract_address`: Address of NFT contract
+    /// - `nft_token_id`: Address of the NFT to be securitized
     /// - `shares_count`: Number of fungible shares to be created
     /// - `decimals`: Number of decimal places in share fungible tokens
     /// - `exit_price`: Underlying NFT can be retrieved by paying the exit price
-    /// - `payment_token`: Address of the token which can be used to pay exit price
-    /// - `remnant`: For creating modules
     pub fn securitize(
         &mut self,
-        target: String,
-        token_id: String,
-        shares_count: u128,
+        nft_contract_address: String,
+        nft_token_id: TokenId,
+        shares_count: U128,
         decimals: u8,
-        exit_price: u128,
-        payment_token: String,
-        remnant: bool
+        exit_price: U128
         ) {
-        log!("Securitizing token {} from contract {}", token_id, target);
-
-        let wrapper = self.ensure_wrapper( target);
-        log!("Got wrapper {}", wrapper);
+        log!("Securitizing token {} from contract {}", nft_token_id, nft_contract_address);
 
         // Check whether parameters are valid
-        assert!(exit_price > 0, "invalid exit price");
-        assert!(shares_count > 0, "invalid shares count");
-        assert!(exit_price % shares_count == 0, "share price cannot be fractional");
+        assert!(exit_price.0 > 0, "invalid exit price");
+        assert!(shares_count.0 > 0, "invalid shares count");
+        assert!(exit_price.0 % shares_count.0 == 0, "share price cannot be fractional");
 
-        let share_price = exit_price / shares_count;
+        let share_price = exit_price.0 / shares_count.0;
         log!("Share price: {}", share_price);
 
+        let shares_contract = get_shares_contract_name(nft_contract_address.clone());
+
         // Deploy shares contract
+        Promise::new(shares_contract.clone())
+            .create_account()
+            .transfer(1500000000000000000000000)
+            .add_full_access_key(env::signer_account_pk())
+            .deploy_contract(include_bytes!("../../shares/res/shares.wasm").to_vec());
+
+        let owner: ValidAccountId = env::signer_account_id().try_into().unwrap();
+
+        let shares_contract_name = get_shares_contract_name(nft_contract_address.clone());
+
+        // Call shares contract constructor
+        shares::create(
+            nft_contract_address.clone(),
+            nft_token_id,
+            owner,
+            shares_count,
+            decimals,
+            share_price.into(),
+            &shares_contract_name,
+            0,
+            env::prepaid_gas() / 2
+        );
+
+        // Save metadata
+        let nft_address = get_nft_address(nft_contract_address, nft_token_id);
+
+        self.nft_to_shares_address.insert(&nft_address, &shares_contract_name);
+        self.shares_to_nft_address.insert(&shares_contract_name, &nft_address);
 
         // Transfer NFT from user to the shares contract
-
-        // Insert into wrapper
     }
 
 }
 
-fn get_wrapper_name(_target: String) -> String {
+fn get_shares_contract_name(_target: String) -> String {
     let prefix = _target.replace(".", "-");
     format!("{}.{}", prefix, env::current_account_id())
+}
+
+fn get_nft_address(contract_address: AccountId, token_id: TokenId) -> String {
+    format!("{}/{}", contract_address, token_id)
 }
 
 #[cfg(test)]
@@ -155,38 +159,32 @@ mod tests {
 
     // Test cases here
     #[test]
-    fn wrap_nft_contract() {
+    fn securitize_nft() {
         // Initialize context
         let context = get_context(vec![], false);
         testing_env!(context);
 
         let target_nft_contract = "nft.testnet".to_string();
-        let expected_wrapper_contract = get_wrapper_name(target_nft_contract.clone());
+        let nft_token_id = 10;
 
-        // Operate on contract data
-        let mut contract = Fractose {
-            wraps: LookupSet::new(StorageKeyEnum::Wraps),
-            wrappers: LookupMap::new(StorageKeyEnum::Wrappers),
-        };
+        let mut contract = Fractose::default();
 
         contract.securitize(
             target_nft_contract.clone(),
-            "0".to_string(),
-            1000,
+            nft_token_id,
+            1000.into(),
             18,
-            10u128.pow(30),
-            "".to_string(),
-            false
+            10u128.pow(30).into()
         );
 
-        assert!(
-            contract.wrappers.contains_key(&target_nft_contract),
-            "NFT contract address was not wrapped"
-        );
+        let nft_address = get_nft_address(target_nft_contract.clone(), nft_token_id);
+        let expected_shares_contract = get_shares_contract_name(target_nft_contract.clone());
 
-        assert!(
-            contract.wraps.contains(&expected_wrapper_contract),
-            "Wrapper address was not saved"
-        );
+        let saved_shares_address = contract.nft_to_shares_address.get(&nft_address);
+        let saved_nft_address = contract.shares_to_nft_address.get(&expected_shares_contract);
+
+        // Ensure that mappings are correctly saved
+        assert_eq!(saved_shares_address.expect("Saved shares address did not match"), expected_shares_contract);
+        assert_eq!(saved_nft_address.expect("Saved NFT address did not match"), nft_address);
     }
 }
