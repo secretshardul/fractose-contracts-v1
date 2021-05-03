@@ -87,18 +87,19 @@ impl Fractose {
         let share_price = exit_price.0 / shares_count.0;
         log!("Share price: {}", share_price);
 
-        let shares_contract = get_shares_contract_name(nft_contract_address.clone());
+        // Include NFT ID
+        let shares_contract = get_shares_contract_name(nft_contract_address.clone(), nft_token_id);
 
         // Deploy shares contract
         Promise::new(shares_contract.clone())
             .create_account()
-            .transfer(1500000000000000000000000)
+            .transfer(25_00000000000000000000000)
             .add_full_access_key(env::signer_account_pk())
             .deploy_contract(include_bytes!("../../shares/res/shares.wasm").to_vec());
 
         let owner: ValidAccountId = env::signer_account_id().try_into().unwrap();
 
-        let shares_contract_name = get_shares_contract_name(nft_contract_address.clone());
+        // let shares_contract_name = get_shares_contract_name(nft_contract_address.clone());
 
         // Call shares contract constructor
         shares::create(
@@ -108,7 +109,7 @@ impl Fractose {
             shares_count,
             decimals,
             share_price.into(),
-            &shares_contract_name,
+            &shares_contract,
             0,
             env::prepaid_gas() / 3
         );
@@ -116,13 +117,13 @@ impl Fractose {
         // Save metadata
         let nft_address = get_nft_address(nft_contract_address.clone(), nft_token_id);
 
-        self.nft_to_shares_address.insert(&nft_address, &shares_contract_name);
-        self.shares_to_nft_address.insert(&shares_contract_name, &nft_address);
+        self.nft_to_shares_address.insert(&nft_address, &shares_contract);
+        self.shares_to_nft_address.insert(&shares_contract, &nft_address);
 
         // Transfer NFT from user to the shares contract
         nep4::transfer_from(
             env::signer_account_id(),
-            shares_contract_name,
+            shares_contract,
             nft_token_id,
 
             &nft_contract_address,
@@ -133,9 +134,9 @@ impl Fractose {
 
 }
 
-fn get_shares_contract_name(_target: String) -> String {
+fn get_shares_contract_name(_target: String, token_id: TokenId) -> String {
     let prefix = _target.replace(".", "-");
-    format!("{}.{}", prefix, env::current_account_id())
+    format!("{}-{}.{}", prefix, token_id, env::current_account_id())
 }
 
 fn get_nft_address(contract_address: AccountId, token_id: TokenId) -> String {
@@ -192,7 +193,7 @@ mod tests {
         );
 
         let nft_address = get_nft_address(target_nft_contract.clone(), nft_token_id);
-        let expected_shares_contract = get_shares_contract_name(target_nft_contract.clone());
+        let expected_shares_contract = get_shares_contract_name(target_nft_contract.clone(), nft_token_id);
 
         let saved_shares_address = contract.nft_to_shares_address.get(&nft_address);
         let saved_nft_address = contract.shares_to_nft_address.get(&expected_shares_contract);

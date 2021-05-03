@@ -1,101 +1,63 @@
-fractose-contracts-v1
-==================
+# Fractose: NFT fractionalization on Near protocol
 
-This app was initialized with [create-near-app]
+## Quickstart
 
+Run the demo script:
+```sh
+ADDRESS=your-near-testnet-address ./demo.sh
+```
 
-Quick Start
-===========
+The script will:
+1. Mint an NFT at your address
+2. Grant escrow access for this NFT to fractose contract
+3. Fractionalize your NFT and give you fungible shares
+4. Optionally you can redeem your NFT by returning the shares
 
-To run this project locally:
+Visit [`demo.sh`](./demo.sh) for a detailed explanation.
 
-1. Prerequisites: Make sure you've installed [Node.js] ≥ 12
-2. Install dependencies: `yarn install`
-3. Run the local development server: `yarn dev` (see `package.json` for a
-   full list of `scripts` you can run with `yarn`)
+## Deploy on your own
+1. Build and deploy NFT minter contract (rust version) from https://github.com/secretshardul/NFT. Alernatively use the NFT minter address `nft-minter-3.monkeyis.testnet`. This is an NEP-4 example fork which lets anyone mint NFTs, not just he contract owner.
 
-Now you'll have a local development environment backed by the NEAR TestNet!
+```sh
+near deploy --wasmFile out/nep4_rs.wasm --accountId nft-minter.monkeyis.testnet
+near call nft-minter.monkeyis.testnet new '{ "owner_id": "nft-minter.monkeyis.testnet" }' --accountId nft-minter.monkeyis.testnet
+```
 
-Go ahead and play with the app and the code. As you make code changes, the app will automatically reload.
+2. Deploy [`fractose.wasm`](./contract/res/fractose.wasm)
 
+3. Note the addresses of NFT minter and fractose. Visit [`demo.sh`](./demo.sh) and replace the address variables.
 
-Exploring The Code
-==================
+4. Run the demo script
 
-1. The "backend" code lives in the `/contract` folder. See the README there for
-   more info.
-2. The frontend code lives in the `/src` folder. `/src/index.html` is a great
-   place to start exploring. Note that it loads in `/src/index.js`, where you
-   can learn how the frontend connects to the NEAR blockchain.
-3. Tests: there are different kinds of tests for the frontend and the smart
-   contract. See `contract/README` for info about how it's tested. The frontend
-   code gets tested with [jest]. You can run both of these at once with `yarn
-   run test`.
+## Features
 
+1. Securitize NFT into a number of fungible shares. You can set the share count of your choice.
 
-Deploy
-======
+2. Shares follow the NEP-141 fungible token standard. You can transfer them to third parties.
 
-Every smart contract in NEAR has its [own associated account][NEAR accounts]. When you run `yarn dev`, your smart contract gets deployed to the live NEAR TestNet with a throwaway account. When you're ready to make it permanent, here's how.
+3. Redeeming: NFT can be redeemed by paying a mixture of shares and NEAR tokens
+   - If you own the entire share supply, you can redeem the NFT directly.
+   - Even if you own no shares, the NFT can be redeemed by paying the exit price.
 
+4. If NFT was redeemed by paying NEAR, a vault is created which becomes the new value provider for shares. Otherwise the contract is destroyed.
 
-Step 0: Install near-cli (optional)
--------------------------------------
+5. `claim()` function: If shares remain, the shareholders can claim NEAR from the vault in proportion of shares held.
 
-[near-cli] is a command line interface (CLI) for interacting with the NEAR blockchain. It was installed to the local `node_modules` folder when you ran `yarn install`, but for best ergonomics you may want to install it globally:
+## Directory structure
 
-    yarn install --global near-cli
+```
+.
+├── contract // Contains fractose contract
+├── shares // Contains shares contract
+└── demo.sh // Demo script
+```
 
-Or, if you'd rather use the locally-installed version, you can prefix all `near` commands with `npx`
+## Future features
 
-Ensure that it's installed with `near --version` (or `npx near --version`)
+- Fractionalize multiple NFTs together
+- Redeem NFT by paying in other fungible tokens
+- Fractional NFT marketplace
 
+# Credits
 
-Step 1: Create an account for the contract
-------------------------------------------
-
-Each account on NEAR can have at most one contract deployed to it. If you've already created an account such as `your-name.testnet`, you can deploy your contract to `fractose-contracts-v1.your-name.testnet`. Assuming you've already created an account on [NEAR Wallet], here's how to create `fractose-contracts-v1.your-name.testnet`:
-
-1. Authorize NEAR CLI, following the commands it gives you:
-
-      near login
-
-2. Create a subaccount (replace `YOUR-NAME` below with your actual account name):
-
-      near create-account fractose-contracts-v1.YOUR-NAME.testnet --masterAccount YOUR-NAME.testnet
-
-
-Step 2: set contract name in code
----------------------------------
-
-Modify the line in `src/config.js` that sets the account name of the contract. Set it to the account id you used above.
-
-    const CONTRACT_NAME = process.env.CONTRACT_NAME || 'fractose-contracts-v1.YOUR-NAME.testnet'
-
-
-Step 3: deploy!
----------------
-
-One command:
-
-    yarn deploy
-
-As you can see in `package.json`, this does two things:
-
-1. builds & deploys smart contract to NEAR TestNet
-2. builds & deploys frontend code to GitHub using [gh-pages]. This will only work if the project already has a repository set up on GitHub. Feel free to modify the `deploy` script in `package.json` to deploy elsewhere.
-
-
-Troubleshooting
-===============
-
-On Windows, if you're seeing an error containing `EPERM` it may be related to spaces in your path. Please see [this issue](https://github.com/zkat/npx/issues/209) for more details.
-
-
-  [create-near-app]: https://github.com/near/create-near-app
-  [Node.js]: https://nodejs.org/en/download/package-manager/
-  [jest]: https://jestjs.io/
-  [NEAR accounts]: https://docs.near.org/docs/concepts/account
-  [NEAR Wallet]: https://wallet.testnet.near.org/
-  [near-cli]: https://github.com/near/near-cli
-  [gh-pages]: https://github.com/tschaub/gh-pages
+Nftfy whitepaper: https://drive.google.com/file/d/1B4b8jV3QDxGPO-Xg_JAtiKbd2O6y8cV7/view
