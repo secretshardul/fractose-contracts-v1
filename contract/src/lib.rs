@@ -28,6 +28,11 @@ pub trait Shares {
 #[ext_contract]
 pub trait NEP4 {
     fn transfer(&mut self, new_owner_id: AccountId, token_id: TokenId);
+
+    // Transfer the given `tokenId` to the given `accountId`. Account `accountId` becomes the new owner.
+    // Requirements:
+    // * The caller of the function (`predecessor_id`) should have access to the token.
+    fn transfer_from(&mut self, owner_id: AccountId, new_owner_id: AccountId, token_id: TokenId);
 }
 
 #[derive(BorshSerialize, BorshStorageKey)]
@@ -105,16 +110,25 @@ impl Fractose {
             share_price.into(),
             &shares_contract_name,
             0,
-            env::prepaid_gas() / 2
+            env::prepaid_gas() / 3
         );
 
         // Save metadata
-        let nft_address = get_nft_address(nft_contract_address, nft_token_id);
+        let nft_address = get_nft_address(nft_contract_address.clone(), nft_token_id);
 
         self.nft_to_shares_address.insert(&nft_address, &shares_contract_name);
         self.shares_to_nft_address.insert(&shares_contract_name, &nft_address);
 
         // Transfer NFT from user to the shares contract
+        nep4::transfer_from(
+            env::signer_account_id(),
+            shares_contract_name,
+            nft_token_id,
+
+            &nft_contract_address,
+            0,
+            env::prepaid_gas() / 3
+        );
     }
 
 }
