@@ -3,7 +3,6 @@
 # How to run: ADDRESS=your-near-address ./script.sh
 
 NFT_ID=token-$RANDOM
-# NFT_CONTRACT=nft-minter-3.monkeyis.testnet
 NFT_CONTRACT=dev-1618440176640-7650905
 FRACTOSE_CONTRACT=fractose.monkeyis.testnet
 SHARES_CONTRACT=dev-1618440176640-7650905-$NFT_ID.$FRACTOSE_CONTRACT
@@ -17,11 +16,7 @@ near call $NFT_CONTRACT nft_mint \
      }
   }' --accountId $ADDRESS --amount 1
 
-# near call $NFT_CONTRACT mint_token '{ "owner_id": "'$ADDRESS'", "token_id": '$NFT_ID' }' --accountId $ADDRESS
-
 echo "2. Granting escrow access to fractose contract $FRACTOSE_CONTRACT ---------------------"
-# near call $NFT_CONTRACT grant_access '{ "escrow_account_id": "'$FRACTOSE_CONTRACT'" }' --accountId $ADDRESS
-
 near call $NFT_CONTRACT nft_approve \
   '{
     "token_id": "'$NFT_ID'",
@@ -33,7 +28,6 @@ near call $NFT_CONTRACT nft_approve \
 near call $FRACTOSE_CONTRACT securitize '{"nft_contract_address": "'$NFT_CONTRACT'", "nft_token_id": "'$NFT_ID'", "shares_count": "1000", "decimals": 4, "exit_price": "10000" }' --accountId $ADDRESS --amount 5
 
 # echo "4. The new NFT owner is ---------------------"
-# # near view $NFT_CONTRACT get_token_owner '{"token_id": '$NFT_ID'}' --accountId $ADDRESS
 near view $NFT_CONTRACT nft_token '{ "token_id": "'$NFT_ID'"}' --accountId $ADDRESS
 
 
@@ -49,4 +43,3 @@ case "$choice" in
   n|N ) echo "Goodbye";;
   * ) echo "invalid";;
 esac
-
