@@ -37,11 +37,6 @@ pub trait NonFungibleTokenCore {
     );
 }
 
-#[ext_contract]
-pub trait NEP4 {
-    fn transfer_from(&mut self, owner_id: AccountId, new_owner_id: AccountId, token_id: TokenId);
-}
-
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKeyEnum {
     NftToSharesAddress,
@@ -109,8 +104,6 @@ impl Fractose {
 
         let owner: ValidAccountId = env::signer_account_id().try_into().unwrap();
 
-        // let shares_contract_name = get_shares_contract_name(nft_contract_address.clone());
-
         // Call shares contract constructor
         shares::create(
             nft_contract_address.clone(),
@@ -130,8 +123,6 @@ impl Fractose {
         self.nft_to_shares_address.insert(&nft_address, &shares_contract);
         self.shares_to_nft_address.insert(&shares_contract, &nft_address);
 
-
-
         non_fungible_token_core::nft_transfer(
             shares_contract.try_into().unwrap(),
             nft_token_id.clone(),
@@ -141,16 +132,6 @@ impl Fractose {
             1,
             env::prepaid_gas() / 3
         );
-
-        // nep4::transfer_from(
-        //     env::signer_account_id(),
-        //     shares_contract,
-        //     nft_token_id,
-
-        //     &nft_contract_address,
-        //     0,
-        //     env::prepaid_gas() / 3
-        // );
     }
 
 }
