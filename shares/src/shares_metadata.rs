@@ -4,7 +4,7 @@ use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::AccountId;
 
 pub const SHARES_FT_METADATA_SPEC: &str = "shares-ft-1.0.0";
-pub type TokenId = u64;
+pub type TokenId = String;
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Deserialize, Serialize)]
 #[serde(crate = "near_sdk::serde")]

@@ -6,7 +6,7 @@ use near_sdk::{
     BorshStorageKey, PanicOnDefault, log,
     near_bindgen, ext_contract,
     collections::LazyOption,
-    json_types::{ValidAccountId, U128},
+    json_types::{ValidAccountId, U64, U128},
     borsh::{self, BorshDeserialize, BorshSerialize}
 };
 mod shares_metadata;
@@ -14,11 +14,22 @@ use shares_metadata::{SharesMetadata, SharesMetadataProvider, SHARES_FT_METADATA
 
 near_sdk::setup_alloc!();
 
-pub type TokenId = u64;
+pub type TokenId = String;
 
 #[ext_contract]
-pub trait NEP4 {
-    fn transfer(&mut self, new_owner_id: AccountId, token_id: TokenId);
+pub trait NonFungibleTokenCore {
+    fn nft_transfer(
+        &mut self,
+        receiver_id: ValidAccountId,
+        token_id: TokenId,
+        approval_id: Option<U64>,
+        memo: Option<String>,
+    );
+}
+
+#[ext_contract]
+pub trait Shares {
+    fn cleanup(&mut self);
 }
 
 #[near_bindgen]
@@ -55,7 +66,7 @@ impl Shares {
 
             // Shares FT specific metadata
             nft_contract_address: nft_contract_address.clone(),
-            nft_token_id,
+            nft_token_id: nft_token_id.clone(),
             share_price,
             released: false
         };
@@ -151,16 +162,18 @@ impl Shares {
         self.on_tokens_burned(user_account.clone(), user_shares.0);
 
         // Transfer NFT to redeemer
-        nep4::transfer(
-            user_account_object.to_string(),
-            nft_token_id,
+        non_fungible_token_core::nft_transfer(
+            user_account_object.clone(),
+            nft_token_id.clone(),
+            None,
+            None,
             &nft_contract_address,
-            0,
+            1,
             env::prepaid_gas() / 2
         );
 
         // Emit event
-        self.on_redeem(user_account, nft_contract_address, nft_token_id);
+        self.on_redeem(user_account, nft_contract_address, nft_token_id.clone());
 
         // Cleanup
         self.cleanup();
@@ -185,25 +198,34 @@ impl Shares {
         self.token.total_supply -= user_shares.0;
         self.on_tokens_burned(user_account.clone(), user_shares.0);
 
+        // Emit event
+        self.on_claim(user_account.clone(), nft_contract_address, nft_token_id, user_shares);
+
         // Transfer NEAR to user
         Promise::new(user_account.clone()).transfer(
             claim_amount.0
-        ); // TODO allow payment in NEP-141 fungible tokens
+        ).then(shares::cleanup(
+            &env::current_account_id(),
+            0,
+            env::prepaid_gas() / 2
+        )); // TODO allow payment in NEP-141 fungible tokens
 
-        // Emit event
-        self.on_claim(user_account, nft_contract_address, nft_token_id, user_shares);
-
-        self.cleanup();
+        // self.cleanup();
     }
 
 
     fn cleanup(&mut self) {
+        // Emit event
+
         let shares_left = self.ft_total_supply();
         if shares_left.0 == 0 {
             // TODO Remove current contract address Fractose contract
 
             // Delete contract if all shares have been burnt
-            Promise::new(env::current_account_id()).delete_account("system".to_string());
+            Promise::new(env::current_account_id()).delete_account(
+                // "system".into()
+                env::signer_account_id() // Transfer any leftover NEAR tokens to redeemer
+            );
         }
     }
 
@@ -249,7 +271,7 @@ mod tests {
 
     const TOTAL_SUPPLY: Balance = 1_000_000_000_000_000;
     const NFT_CONTRACT_ADDRESS: &'static str = "nft.near";
-    const NFT_TOKEN_ID: TokenId = 0;
+    const NFT_TOKEN_ID: &'static str = "0";
     const DECIMALS: u8 = 8;
     const SHARE_PRICE: u128 = 100000;
 
@@ -270,7 +292,7 @@ mod tests {
 
         let contract = Shares::create(
             NFT_CONTRACT_ADDRESS.into(),
-            NFT_TOKEN_ID,
+            NFT_TOKEN_ID.into(),
             accounts(0),
             TOTAL_SUPPLY.into(),
             DECIMALS,
@@ -299,7 +321,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Shares::create(
             NFT_CONTRACT_ADDRESS.into(),
-            NFT_TOKEN_ID,
+            NFT_TOKEN_ID.into(),
             accounts(2),
             TOTAL_SUPPLY.into(),
             DECIMALS,
@@ -338,7 +360,7 @@ mod tests {
 
         let mut contract = Shares::create(
             NFT_CONTRACT_ADDRESS.into(),
-            NFT_TOKEN_ID,
+            NFT_TOKEN_ID.into(),
             accounts(0),
             TOTAL_SUPPLY.into(),
             DECIMALS,
@@ -362,7 +384,7 @@ mod tests {
 
         let mut contract = Shares::create(
             NFT_CONTRACT_ADDRESS.into(),
-            NFT_TOKEN_ID,
+            NFT_TOKEN_ID.into(),
             accounts(1),
             TOTAL_SUPPLY.into(),
             DECIMALS,
@@ -389,7 +411,7 @@ mod tests {
 
         let mut contract = Shares::create(
             NFT_CONTRACT_ADDRESS.into(),
-            NFT_TOKEN_ID,
+            NFT_TOKEN_ID.into(),
             accounts(0),
             TOTAL_SUPPLY.into(),
             DECIMALS,

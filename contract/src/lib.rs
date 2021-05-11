@@ -3,14 +3,15 @@ use std::convert::TryInto;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::LookupMap,
-    ext_contract,
-    env, near_bindgen, Promise, log, BorshStorageKey, AccountId,
-    json_types::{ValidAccountId, U128},
+    ext_contract, near_bindgen,
+    setup_alloc, log, BorshStorageKey,
+    env, Promise, AccountId,
+    json_types::{ValidAccountId, U64, U128},
 };
 
-near_sdk::setup_alloc!();
+setup_alloc!();
 
-pub type TokenId = u64;
+pub type TokenId = String;
 pub type AccountAndTokenId = String;
 
 #[ext_contract]
@@ -26,12 +27,18 @@ pub trait Shares {
 }
 
 #[ext_contract]
-pub trait NEP4 {
-    fn transfer(&mut self, new_owner_id: AccountId, token_id: TokenId);
+pub trait NonFungibleTokenCore {
+    fn nft_transfer(
+        &mut self,
+        receiver_id: ValidAccountId,
+        token_id: TokenId,
+        approval_id: Option<U64>,
+        memo: Option<String>,
+    );
+}
 
-    // Transfer the given `tokenId` to the given `accountId`. Account `accountId` becomes the new owner.
-    // Requirements:
-    // * The caller of the function (`predecessor_id`) should have access to the token.
+#[ext_contract]
+pub trait NEP4 {
     fn transfer_from(&mut self, owner_id: AccountId, new_owner_id: AccountId, token_id: TokenId);
 }
 
@@ -69,6 +76,7 @@ impl Fractose {
     /// - `shares_count`: Number of fungible shares to be created
     /// - `decimals`: Number of decimal places in share fungible tokens
     /// - `exit_price`: Underlying NFT can be retrieved by paying the exit price
+    #[payable]
     pub fn securitize(
         &mut self,
         nft_contract_address: String,
@@ -88,7 +96,9 @@ impl Fractose {
         log!("Share price: {}", share_price);
 
         // Include NFT ID
-        let shares_contract = get_shares_contract_name(nft_contract_address.clone(), nft_token_id);
+        let shares_contract = get_shares_contract_name(
+            nft_contract_address.clone(), nft_token_id.clone()
+        );
 
         // Deploy shares contract
         Promise::new(shares_contract.clone())
@@ -104,7 +114,7 @@ impl Fractose {
         // Call shares contract constructor
         shares::create(
             nft_contract_address.clone(),
-            nft_token_id,
+            nft_token_id.clone(),
             owner,
             shares_count,
             decimals,
@@ -115,21 +125,32 @@ impl Fractose {
         );
 
         // Save metadata
-        let nft_address = get_nft_address(nft_contract_address.clone(), nft_token_id);
+        let nft_address = get_nft_address(nft_contract_address.clone(), nft_token_id.clone());
 
         self.nft_to_shares_address.insert(&nft_address, &shares_contract);
         self.shares_to_nft_address.insert(&shares_contract, &nft_address);
 
-        // Transfer NFT from user to the shares contract
-        nep4::transfer_from(
-            env::signer_account_id(),
-            shares_contract,
-            nft_token_id,
 
+
+        non_fungible_token_core::nft_transfer(
+            shares_contract.try_into().unwrap(),
+            nft_token_id.clone(),
+            None,
+            None,
             &nft_contract_address,
-            0,
+            1,
             env::prepaid_gas() / 3
         );
+
+        // nep4::transfer_from(
+        //     env::signer_account_id(),
+        //     shares_contract,
+        //     nft_token_id,
+
+        //     &nft_contract_address,
+        //     0,
+        //     env::prepaid_gas() / 3
+        // );
     }
 
 }
@@ -180,20 +201,20 @@ mod tests {
         testing_env!(context);
 
         let target_nft_contract = "nft.testnet".to_string();
-        let nft_token_id = 10;
+        let nft_token_id = "0".to_string();
 
         let mut contract = Fractose::default();
 
         contract.securitize(
             target_nft_contract.clone(),
-            nft_token_id,
+            nft_token_id.clone(),
             1000.into(),
             18,
             10u128.pow(30).into()
         );
 
-        let nft_address = get_nft_address(target_nft_contract.clone(), nft_token_id);
-        let expected_shares_contract = get_shares_contract_name(target_nft_contract.clone(), nft_token_id);
+        let nft_address = get_nft_address(target_nft_contract.clone(), nft_token_id.clone());
+        let expected_shares_contract = get_shares_contract_name(target_nft_contract.clone(), nft_token_id.clone());
 
         let saved_shares_address = contract.nft_to_shares_address.get(&nft_address);
         let saved_nft_address = contract.shares_to_nft_address.get(&expected_shares_contract);

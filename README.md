@@ -61,3 +61,36 @@ near call nft-minter.monkeyis.testnet new '{ "owner_id": "nft-minter.monkeyis.te
 # Credits
 
 Nftfy whitepaper: https://drive.google.com/file/d/1B4b8jV3QDxGPO-Xg_JAtiKbd2O6y8cV7/view
+
+# New NFT standard
+- Minter address: dev-1618440176640-7650905
+- Token ID: token-1620666778861
+- For minting, function `nft_mint` is called with payload
+
+```
+Arguments: {
+  "token_id": "token-1620666778861",
+  "metadata": {
+    "media": "https://near.org/wp-content/themes/near-19/assets/img/neue/kats-header.svg?t=1602250980",
+    "issued_at": "1620666778861"
+  },
+  "perpetual_royalties": {}
+}
+```
+
+- View owner using
+
+```sh
+near view dev-1618440176640-7650905 nft_token '{ "token_id": "token-1620666778861"}' --accountId monkeyis.testnet
+```
+
+- Give NFT access to another user
+```sh
+near call dev-1618440176640-7650905 nft_approve '{ "token_id": "token-1620666778861", "account_id": "alt.monkeyis.testnet" }' --accountId monkeyis.testnet --amount 0.1
+```
+
+- Transfer an approved NFT on behalf of owner
+
+```sh
+near call dev-1618440176640-7650905 nft_transfer '{ "receiver_id": "alt2.monkeyis.testnet", "token_id": "token-1620666778861" }' --accountId monkeyis.testnet --amount .000000000000000000000001
+```
